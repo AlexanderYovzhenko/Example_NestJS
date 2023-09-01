@@ -1,0 +1,165 @@
+version: '3.7'
+services:
+  rabbitmq:
+    container_name: rabbitmq
+    image: rabbitmq:3-management
+    restart: unless-stopped
+    hostname: ${RABBIT_HOST}
+    ports:
+      - ${RABBIT_PORT}:${RABBIT_PORT}
+      - ${RABBIT_MANAGER_PORT}:${RABBIT_MANAGER_PORT}
+    volumes:
+      - rabbit_data:/var/lib/rabbitmq
+    env_file:
+      - .env
+    networks:
+      - backend
+
+  postgres:
+    container_name: postgres
+    image: postgres:latest
+    restart: unless-stopped
+    expose:
+      - ${POSTGRES_PORT}
+    ports:
+      - ${POSTGRES_PORT}:${POSTGRES_PORT}
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+    volumes:
+      - ./db/data:/var/lib/postgresql/data
+    env_file:
+      - .env
+    networks:
+      - backend
+
+  postgres_admin:
+    container_name: postgres_admin
+    image: dpage/pgadmin4
+    restart: unless-stopped
+    depends_on:
+      - postgres
+    ports:
+      - '${POSTGRES_ADMIN_PORT}:80'
+    environment:
+      PGADMIN_DEFAULT_EMAIL: ${PGADMIN_DEFAULT_EMAIL}
+      PGADMIN_DEFAULT_PASSWORD: ${PGADMIN_DEFAULT_PASSWORD}
+    env_file:
+      - .env
+    networks:
+      - backend
+
+  api:
+    container_name: api
+    build:
+      context: ./
+      dockerfile: ./apps/api/Dockerfile
+      target: ${NODE_ENV}
+    restart: unless-stopped
+    depends_on:
+      - rabbitmq
+      - postgres
+    expose:
+      - ${PORT}
+    ports:
+      - ${PORT}:${PORT}
+    volumes:
+      - .:/usr/src/app # any change to base folder should be reflected
+      - /usr/src/app/node_modules
+    command: npm run start:dev api
+    env_file:
+      - .env
+    networks:
+      - backend
+
+  auth:
+    container_name: auth
+    build:
+      context: ./
+      dockerfile: ./apps/auth/Dockerfile
+      target: ${NODE_ENV}
+    restart: unless-stopped
+    depends_on:
+      - rabbitmq
+      - postgres
+      - api
+      - user
+    volumes:
+      - .:/usr/src/app
+      - /usr/src/app/node_modules
+    command: npm run start:dev auth
+    env_file:
+      - .env
+    networks:
+      - backend
+    
+  user:
+    container_name: user
+    build:
+      context: ./
+      dockerfile: ./apps/user/Dockerfile
+      target: ${NODE_ENV}
+    restart: unless-stopped
+    depends_on:
+      - rabbitmq
+      - postgres
+      - api
+    volumes:
+      - .:/usr/src/app
+      - /usr/src/app/node_modules
+    command: npm run start:dev user
+    env_file:
+      - .env
+    networks:
+      - backend
+
+  telegram_bot:
+    container_name: telegram_bot
+    build:
+      context: ./
+      dockerfile: ./apps/telegram-bot/Dockerfile
+      target: ${NODE_ENV}
+    restart: unless-stopped
+    depends_on:
+      - rabbitmq
+      - postgres
+      - api
+    volumes:
+      - .:/usr/src/app
+      - /usr/src/app/node_modules
+    command: npm run start:dev telegram-bot
+    env_file:
+      - .env
+    networks:
+      - backend
+
+  publication:
+    container_name: publication
+    build:
+      context: ./
+      dockerfile: ./apps/publication/Dockerfile
+      target: ${NODE_ENV}
+    restart: unless-stopped
+    depends_on:
+      - rabbitmq
+      - postgres
+      - api
+      - user
+    volumes:
+      - .:/usr/src/app
+      - /usr/src/app/node_modules
+    command: npm run start:dev publication
+    env_file:
+      - .env
+    networks:
+      - backend
+
+
+networks:
+  backend:
+    driver: bridge
+
+volumes:
+  rabbit_data:
+    driver: local
